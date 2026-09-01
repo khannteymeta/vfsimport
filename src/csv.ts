@@ -1,14 +1,13 @@
-import type { CsvRow } from "./types";
+import type { CsvRow, CliOptions } from "./types";
 
 /**
  * A streaming CSV parser state machine that handles large CSV files safely without memory overflow.
- * Supports:
- * - RFC 4180 quotes with escaped quotes `""`
- * - Newlines within quoted fields
- * - Header detection (key/data/metadata/name/mime)
- * - Fallback to column index 0 = key, 1 = data
+ * Supports custom column names or column index mappings.
  */
-export async function* parseCsvStream(filePath: string): AsyncGenerator<CsvRow, void, unknown> {
+export async function* parseCsvStream(
+  filePath: string,
+  options?: Partial<CliOptions>
+): AsyncGenerator<CsvRow, void, unknown> {
   const file = Bun.file(filePath);
   const exists = await file.exists();
   if (!exists) {
@@ -24,12 +23,35 @@ export async function* parseCsvStream(filePath: string): AsyncGenerator<CsvRow, 
   let currentRow: string[] = [];
   let isFirstRow = true;
   let headers: string[] | null = null;
-  let keyIndex = 0;
-  let dataIndex = 1;
-  let metaIndex = -1;
-  let nameIndex = -1;
-  let mimeIndex = -1;
+  let keyIndex = options?.keyCol && !isNaN(Number(options.keyCol)) ? Number(options.keyCol) : 0;
+  let dataIndex = options?.dataCol && !isNaN(Number(options.dataCol)) ? Number(options.dataCol) : 1;
+  let metaIndex = options?.metaCol && !isNaN(Number(options.metaCol)) ? Number(options.metaCol) : -1;
+  let nameIndex = options?.nameCol && !isNaN(Number(options.nameCol)) ? Number(options.nameCol) : -1;
+  let mimeIndex = options?.mimeCol && !isNaN(Number(options.mimeCol)) ? Number(options.mimeCol) : -1;
   let rowIndex = 0;
+
+  const resolveColumnIndex = (
+    headerList: string[],
+    specifiedCol?: string,
+    fallbackNames: string[] = [],
+    defaultIdx: number = 0
+  ): number => {
+    if (specifiedCol) {
+      if (!isNaN(Number(specifiedCol))) {
+        return Number(specifiedCol);
+      }
+      const lowerSpecified = specifiedCol.trim().toLowerCase();
+      const foundIdx = headerList.findIndex((h) => h === lowerSpecified);
+      if (foundIdx >= 0) return foundIdx;
+    }
+
+    for (const name of fallbackNames) {
+      const idx = headerList.findIndex((h) => h === name.toLowerCase());
+      if (idx >= 0) return idx;
+    }
+
+    return defaultIdx;
+  };
 
   try {
     while (true) {
@@ -66,29 +88,63 @@ export async function* parseCsvStream(filePath: string): AsyncGenerator<CsvRow, 
             if (isFirstRow) {
               isFirstRow = false;
               const lowerCols = currentRow.map((c) => c.trim().toLowerCase());
-              const hasKey = lowerCols.includes("key") || lowerCols.includes("id") || lowerCols.includes("name");
-              const hasData =
+
+              const hasExplicitKeyCol =
+                options?.keyCol && lowerCols.includes(options.keyCol.trim().toLowerCase());
+              const hasExplicitDataCol =
+                options?.dataCol && lowerCols.includes(options.dataCol.trim().toLowerCase());
+
+              const hasDefaultKey =
+                lowerCols.includes("key") ||
+                lowerCols.includes("id") ||
+                lowerCols.includes("name") ||
+                lowerCols.includes("code");
+              const hasDefaultData =
                 lowerCols.includes("data") ||
                 lowerCols.includes("base64") ||
                 lowerCols.includes("file") ||
-                lowerCols.includes("content");
+                lowerCols.includes("content") ||
+                lowerCols.includes("image");
 
-              if (hasKey && hasData) {
+              if (hasExplicitKeyCol || hasExplicitDataCol || (hasDefaultKey && hasDefaultData)) {
                 // Header detected
                 headers = lowerCols;
-                keyIndex = headers.findIndex((h) => h === "key" || h === "id" || h === "name");
-                dataIndex = headers.findIndex(
-                  (h) => h === "data" || h === "base64" || h === "file" || h === "content"
+                keyIndex = resolveColumnIndex(
+                  headers,
+                  options?.keyCol,
+                  ["key", "id", "code", "name"],
+                  0
                 );
-                metaIndex = headers.findIndex((h) => h === "metadata" || h === "meta");
-                nameIndex = headers.findIndex((h) => h === "filename" || h === "name" && h !== headers[keyIndex]);
-                mimeIndex = headers.findIndex((h) => h === "mimetype" || h === "mime_type" || h === "mime");
+                dataIndex = resolveColumnIndex(
+                  headers,
+                  options?.dataCol,
+                  ["data", "base64", "file", "content", "image"],
+                  1
+                );
+                metaIndex = resolveColumnIndex(
+                  headers,
+                  options?.metaCol,
+                  ["metadata", "meta"],
+                  -1
+                );
+                nameIndex = resolveColumnIndex(
+                  headers,
+                  options?.nameCol,
+                  ["filename", "file_name"],
+                  -1
+                );
+                mimeIndex = resolveColumnIndex(
+                  headers,
+                  options?.mimeCol,
+                  ["mimetype", "mime_type", "mime", "content_type"],
+                  -1
+                );
                 currentRow = [];
                 continue;
               } else {
-                // First row is actually data, fallback to index 0 and 1
-                keyIndex = 0;
-                dataIndex = 1;
+                // First row is data
+                keyIndex = options?.keyCol && !isNaN(Number(options.keyCol)) ? Number(options.keyCol) : 0;
+                dataIndex = options?.dataCol && !isNaN(Number(options.dataCol)) ? Number(options.dataCol) : 1;
               }
             }
 

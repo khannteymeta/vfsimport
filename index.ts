@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
-import { parseCliArgs, printHelp, DEFAULT_SERVER_URL } from "./src/config";
+import { parseCliArgs, printHelp } from "./src/config";
 import { parseCsvStream } from "./src/csv";
 import { runWorkerPool, type ProgressStats } from "./src/pool";
 import type { UploadResult } from "./src/types";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 
 async function main() {
   const options = parseCliArgs(process.argv.slice(2));
@@ -37,11 +37,17 @@ async function main() {
     ? "x-api-hash [SET]"
     : "None";
 
+  const outFormat = options.outputFormat.toUpperCase();
+
   console.log("══════════════════════════════════════════════════════════════");
   console.log(` 🚀 VFS Import CLI v${VERSION}`);
   console.log("══════════════════════════════════════════════════════════════");
   console.log(` 📄 Input CSV       : ${options.input}`);
-  console.log(` 💾 Output JSON     : ${options.output}`);
+  console.log(` 💾 Output File     : ${options.output} (${outFormat})`);
+  console.log(` 🏷️  Output Headers  : ${options.outputKeyHeader}, ${options.outputUrlHeader}`);
+  if (options.keyCol || options.dataCol) {
+    console.log(` 🔍 Input Mapping   : key -> ${options.keyCol || "auto"}, data -> ${options.dataCol || "auto"}`);
+  }
   console.log(` 🌐 Server URL      : ${options.url}`);
   console.log(` 🔑 Authentication  : ${authDesc}`);
   console.log(` 🪣 Bucket ID       : ${options.bucketId || "demo"}`);
@@ -79,7 +85,7 @@ async function main() {
   };
 
   try {
-    const rowGenerator = parseCsvStream(options.input);
+    const rowGenerator = parseCsvStream(options.input, options);
     const summary = await runWorkerPool(rowGenerator, options, onProgress);
 
     if (isTTY) {

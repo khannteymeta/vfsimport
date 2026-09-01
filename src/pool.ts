@@ -1,6 +1,6 @@
 import type { CliOptions, CsvRow, UploadResult } from "./types";
 import { uploadRow } from "./uploader";
-import { JsonOutputWriter } from "./output";
+import { createOutputWriter } from "./output";
 
 export interface ProgressStats {
   processed: number;
@@ -21,7 +21,7 @@ export async function runWorkerPool(
   options: CliOptions,
   onProgress?: ProgressCallback
 ): Promise<{ total: number; succeeded: number; failed: number; elapsedMs: number }> {
-  const outputWriter = new JsonOutputWriter(options.output);
+  const outputWriter = createOutputWriter(options);
   await outputWriter.init();
 
   const startTime = Date.now();

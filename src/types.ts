@@ -1,6 +1,9 @@
+export type OutputFormat = "json" | "csv" | "auto";
+
 export interface CliOptions {
   input: string;
   output: string;
+  outputFormat: OutputFormat;
   url: string;
   apiKey?: string;
   apiHash?: string;
@@ -15,6 +18,18 @@ export interface CliOptions {
   help?: boolean;
   version?: boolean;
   verbose?: boolean;
+
+  // Custom Input Column mappings
+  keyCol?: string;
+  dataCol?: string;
+  metaCol?: string;
+  nameCol?: string;
+  mimeCol?: string;
+
+  // Custom Output Header mappings
+  outputKeyHeader: string;
+  outputUrlHeader: string;
+  outputExtraHeaders?: boolean; // include status/error in CSV if true or only key & url
 }
 
 export interface CsvRow {
@@ -24,6 +39,7 @@ export interface CsvRow {
   metadata?: string;
   name?: string;
   mimeType?: string;
+  extraFields?: Record<string, string>;
 }
 
 export interface UploadResult {

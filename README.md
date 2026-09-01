@@ -6,10 +6,11 @@ A high-performance, memory-safe CSV to VFS Server batch uploader CLI built with 
 
 - ⚡ **Ultra-Fast & Streaming**: Streams CSV files chunk-by-chunk using Bun file streams without loading entire files into memory, preventing memory overflow on large datasets.
 - 🔀 **Controlled Concurrency**: Bounded worker pool to prevent bursting or overloading the VFS server.
+- 📊 **Flexible Output Formats**: Supports **CSV** and **JSON** output formats with auto-detection or explicit flag (`-f csv` / `-f json`).
+- 🏷️ **Custom Column & Header Mapping**: Customize input columns (`--key-col`, `--data-col`) and output headers (`--output-key-header id`, `--output-url-header image_url`, or `--output-headers "id,image_url"`).
 - 🔑 **Flexible Authentication**: Supports `VFS_API_KEY` (`x-api-key`), `VFS_API_HASH` (`x-api-hash`), or unauthenticated uploads.
 - 🖼️ **Smart MIME & Extension Detection**: Detects file types from data URI prefixes (`data:image/png;base64,...`) and magic bytes (PNG, JPEG, WebP, GIF, PDF, MP4, etc.), with configurable `--mime-type` fallback.
 - 🧹 **Temp File Management**: Safely writes base64 buffers to temporary files before upload and automatically unlinks them upon completion.
-- 📄 **JSON Output**: Incrementally streams results into a single JSON file (e.g. `output.json`) containing all key-to-URL mappings and upload statuses.
 
 ---
 
@@ -19,12 +20,7 @@ A high-performance, memory-safe CSV to VFS Server batch uploader CLI built with 
 bun install
 ```
 
-To link the CLI globally or run directly:
-```bash
-bun link
-vfsimport --help
-```
-Or run with `bun run`:
+To run directly:
 ```bash
 bun run index.ts -i <file.csv> [options]
 ```
@@ -39,10 +35,28 @@ vfsimport -i <input.csv> [options]
 
 ### Options
 
+#### Input & Output
 | Flag | Short | Description | Default |
 |------|-------|-------------|---------|
-| `--input <path>` | `-i` | **(Required)** Path to input CSV file containing `[key, data]` | - |
-| `--output <path>` | `-o` | Path to output JSON file | `output.json` |
+| `--input <path>` | `-i` | **(Required)** Path to input CSV file | - |
+| `--output <path>` | `-o` | Path to output file | `output.json` |
+| `--format <json\|csv\|auto>` | `-f` | Output format (auto-detects `.csv` / `.json` extension) | `auto` |
+| `--output-key-header <name>` | | Custom key header name in output (e.g. `id`) | `key` |
+| `--output-url-header <name>` | | Custom URL header name in output (e.g. `image_url`) | `url` |
+| `--output-headers <key,url>` | | Comma-separated output headers (e.g. `"id,image_url"`) | `key,url` |
+
+#### Input Column Mapping
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--key-col <name\|index>` | Input column name or 0-based index for Key/ID | Detects `key`/`id` or col `0` |
+| `--data-col <name\|index>` | Input column name or 0-based index for Base64 Data | Detects `data`/`base64` or col `1` |
+| `--meta-col <name\|index>` | Input column name or 0-based index for Metadata | Detects `metadata` or col `-1` |
+| `--name-col <name\|index>` | Input column name or 0-based index for Filename | Detects `filename` or col `-1` |
+| `--mime-col <name\|index>` | Input column name or 0-based index for MIME type | Detects `mimetype` or col `-1` |
+
+#### Server & Upload Options
+| Flag | Short | Description | Default |
+|------|-------|-------------|---------|
 | `--url <url>` | `-u` | VFS Server upload endpoint | `https://vfs-server-dev-devx1.ctdn.dev` |
 | `--api-key <key>` | | Sets `x-api-key` header | `undefined` |
 | `--api-hash <hash>` | | Sets `x-api-hash` header | `undefined` |
@@ -56,55 +70,55 @@ vfsimport -i <input.csv> [options]
 | `--keep-tmp` | | Keep temporary files after upload (do not auto-delete) | `false` |
 | `--verbose` | `-v` | Verbose per-item log output | `false` |
 | `--help` | `-h` | Display help screen | |
-| `--version` | | Show version | |
 
 ---
 
-## Environment Variables
+## Examples
 
-Bun automatically loads `.env` files in your workspace:
-
-```env
-VFS_SERVER_URL=https://vfs-server-dev-devx1.ctdn.dev
-VFS_API_KEY=your-api-key-here
-VFS_API_HASH=your-api-hash-here
-VFS_BUCKET_ID=demo
-VFS_STORE=local
-VFS_MIME_TYPE=image/png
-VFS_CONCURRENCY=10
+### 1. Output as CSV with Custom Headers (`id`, `image_url`)
+```bash
+bun run index.ts \
+  -i input.csv \
+  -o output.csv \
+  --output-headers "id,image_url"
 ```
 
----
-
-## CSV Format
-
-The CSV can include a header row (`key`, `data`, optional `metadata`, `name`, `mime_type`) or use default 1st column = `key`, 2nd column = `data` (base64 string).
-
-### Example with Header:
+Output `output.csv`:
 ```csv
-key,data
-avatar_001,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
-doc_002,data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsOfCDC...
+id,image_url,success,file_id,error
+user_001,https://vfs-server-dev-devx1.ctdn.dev/uploads/demo/user_001.png,true,file_123,
+user_002,https://vfs-server-dev-devx1.ctdn.dev/uploads/demo/user_002.png,true,file_124,
 ```
 
-### Example without Header:
-```csv
-item_1,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
-item_2,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+### 2. Custom Input Columns to CSV Output
+When your input CSV has custom headers like `user_id` and `avatar_base64`:
+```bash
+bun run index.ts \
+  -i users.csv \
+  -o output.csv \
+  --key-col user_id \
+  --data-col avatar_base64 \
+  --output-key-header id \
+  --output-url-header image_url
 ```
 
----
+### 3. Custom Output in JSON Format
+```bash
+bun run index.ts \
+  -i users.csv \
+  -o output.json \
+  --output-headers "id,image_url"
+```
 
-## Output JSON Structure
-
+Output `output.json`:
 ```json
 {
   "items": [
     {
-      "key": "avatar_001",
-      "url": "https://vfs-server-dev-devx1.ctdn.dev/uploads/demo/avatar_001.png",
+      "id": "user_001",
+      "image_url": "https://vfs-server-dev-devx1.ctdn.dev/uploads/demo/user_001.png",
       "success": true,
-      "fileId": "file_01928374",
+      "fileId": "file_123",
       "error": null
     }
   ],
@@ -112,7 +126,7 @@ item_2,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAW
     "total": 1,
     "succeeded": 1,
     "failed": 0,
-    "elapsedMs": 120
+    "elapsedMs": 110
   }
 }
 ```
@@ -120,8 +134,6 @@ item_2,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAW
 ---
 
 ## Testing
-
-Run unit & integration tests using Bun's test runner:
 
 ```bash
 bun test
