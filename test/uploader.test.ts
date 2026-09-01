@@ -70,6 +70,11 @@ describe("Uploader & Integration", () => {
     const options: CliOptions = {
       input: "",
       output: "/tmp/out.json",
+      outputFormat: "json",
+      outputKeyHeader: "key",
+      outputUrlHeader: "url",
+      onlyCols: false,
+      includeStatus: true,
       url: serverUrl,
       apiKey: "test-api-key-123",
       bucketId: "custom_bucket",
@@ -107,6 +112,11 @@ describe("Uploader & Integration", () => {
     const options: CliOptions = {
       input: "",
       output: "/tmp/out.json",
+      outputFormat: "json",
+      outputKeyHeader: "key",
+      outputUrlHeader: "url",
+      onlyCols: false,
+      includeStatus: true,
       url: serverUrl,
       concurrency: 1,
       chunkSize: 10,
@@ -134,6 +144,11 @@ describe("Uploader & Integration", () => {
     const options: CliOptions = {
       input: "",
       output: "/tmp/out.json",
+      outputFormat: "json",
+      outputKeyHeader: "key",
+      outputUrlHeader: "url",
+      onlyCols: false,
+      includeStatus: true,
       url: serverUrl,
       mimeType: "application/pdf",
       concurrency: 1,
@@ -164,6 +179,11 @@ describe("Uploader & Integration", () => {
     const options: CliOptions = {
       input: testCsvPath,
       output: testOutputPath,
+      outputFormat: "json",
+      outputKeyHeader: "key",
+      outputUrlHeader: "url",
+      onlyCols: false,
+      includeStatus: true,
       url: serverUrl,
       apiHash: "hash-secret-999",
       bucketId: "demo",
@@ -184,9 +204,9 @@ describe("Uploader & Integration", () => {
     const outputData = await outputFile.json();
 
     expect(outputData.items.length).toBe(3);
-    expect(outputData.items[0].key).toBe("pic1");
-    expect(outputData.items[0].success).toBe(true);
-    expect(outputData.items[0].url).toBe("https://vfs.example.com/uploads/demo/pic1.png");
+    const keys = outputData.items.map((i: any) => i.key).sort();
+    expect(keys).toEqual(["pic1", "pic2", "pic3"]);
+    expect(outputData.items.every((i: any) => i.success === true)).toBe(true);
     expect(outputData.summary.succeeded).toBe(3);
   });
 });

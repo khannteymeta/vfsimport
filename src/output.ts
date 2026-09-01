@@ -9,7 +9,7 @@ export interface OutputWriter {
 
 function escapeCsvField(field: string | null | undefined): string {
   if (field === null || field === undefined) return "";
-  const str = String(field);
+  const str = String(field).trim();
   if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
     return `"${str.replace(/"/g, '""')}"`;
   }
@@ -17,25 +17,31 @@ function escapeCsvField(field: string | null | undefined): string {
 }
 
 /**
- * Streaming CSV output writer with customizable column headers.
+ * Streaming CSV output writer with customizable column headers and strict column trimming.
  */
 export class CsvOutputWriter implements OutputWriter {
   private filePath: string;
   private fileHandle: any = null;
   private keyHeader: string;
   private urlHeader: string;
+  private onlyCols: boolean;
 
-  constructor(filePath: string, keyHeader = "key", urlHeader = "url") {
+  constructor(filePath: string, keyHeader = "key", urlHeader = "url", onlyCols = false) {
     this.filePath = filePath;
-    this.keyHeader = keyHeader;
-    this.urlHeader = urlHeader;
+    this.keyHeader = keyHeader.trim();
+    this.urlHeader = urlHeader.trim();
+    this.onlyCols = onlyCols;
   }
 
   async init(): Promise<void> {
     this.fileHandle = await open(this.filePath, "w");
-    // Write header line
-    const headerLine = `${escapeCsvField(this.keyHeader)},${escapeCsvField(this.urlHeader)},success,file_id,error\n`;
-    await this.fileHandle.write(headerLine);
+    if (this.onlyCols) {
+      const headerLine = `${escapeCsvField(this.keyHeader)},${escapeCsvField(this.urlHeader)}\n`;
+      await this.fileHandle.write(headerLine);
+    } else {
+      const headerLine = `${escapeCsvField(this.keyHeader)},${escapeCsvField(this.urlHeader)},success,file_id,error\n`;
+      await this.fileHandle.write(headerLine);
+    }
   }
 
   async writeResult(result: UploadResult): Promise<void> {
@@ -43,13 +49,18 @@ export class CsvOutputWriter implements OutputWriter {
       await this.init();
     }
 
-    const row = [
-      escapeCsvField(result.key),
-      escapeCsvField(result.url || ""),
-      result.success ? "true" : "false",
-      escapeCsvField(result.fileId || ""),
-      escapeCsvField(result.error || ""),
-    ].join(",") + "\n";
+    const row = this.onlyCols
+      ? [
+          escapeCsvField(result.key),
+          escapeCsvField(result.url || ""),
+        ].join(",") + "\n"
+      : [
+          escapeCsvField(result.key),
+          escapeCsvField(result.url || ""),
+          result.success ? "true" : "false",
+          escapeCsvField(result.fileId || ""),
+          escapeCsvField(result.error || ""),
+        ].join(",") + "\n";
 
     await this.fileHandle.write(row);
   }
@@ -73,11 +84,13 @@ export class JsonOutputWriter implements OutputWriter {
   private failCount = 0;
   private keyHeader: string;
   private urlHeader: string;
+  private onlyCols: boolean;
 
-  constructor(filePath: string, keyHeader = "key", urlHeader = "url") {
+  constructor(filePath: string, keyHeader = "key", urlHeader = "url", onlyCols = false) {
     this.filePath = filePath;
-    this.keyHeader = keyHeader;
-    this.urlHeader = urlHeader;
+    this.keyHeader = keyHeader.trim();
+    this.urlHeader = urlHeader.trim();
+    this.onlyCols = onlyCols;
   }
 
   async init(): Promise<void> {
@@ -97,13 +110,18 @@ export class JsonOutputWriter implements OutputWriter {
       this.failCount++;
     }
 
-    const record: Record<string, any> = {
-      [this.keyHeader]: result.key,
-      [this.urlHeader]: result.url || null,
-      success: result.success,
-      fileId: result.fileId || null,
-      error: result.error || null,
-    };
+    const record: Record<string, any> = this.onlyCols
+      ? {
+          [this.keyHeader]: result.key ? result.key.trim() : result.key,
+          [this.urlHeader]: result.url ? result.url.trim() : null,
+        }
+      : {
+          [this.keyHeader]: result.key ? result.key.trim() : result.key,
+          [this.urlHeader]: result.url ? result.url.trim() : null,
+          success: result.success,
+          fileId: result.fileId || null,
+          error: result.error || null,
+        };
 
     const itemStr = JSON.stringify(record);
     const prefix = this.isFirst ? "    " : ",\n    ";
@@ -135,13 +153,15 @@ export function createOutputWriter(options: CliOptions): OutputWriter {
     return new CsvOutputWriter(
       options.output,
       options.outputKeyHeader,
-      options.outputUrlHeader
+      options.outputUrlHeader,
+      options.onlyCols
     );
   }
 
   return new JsonOutputWriter(
     options.output,
     options.outputKeyHeader,
-    options.outputUrlHeader
+    options.outputUrlHeader,
+    options.onlyCols
   );
 }

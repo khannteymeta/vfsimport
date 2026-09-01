@@ -40,7 +40,7 @@ describe("Custom Column & Output Format Mapping", () => {
     } catch {}
   });
 
-  test("generates CSV output with custom headers id and image_url", async () => {
+  test("generates CSV output with ONLY the requested custom headers id and image_url", async () => {
     const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
     const inputCsvContent = `id,image_base64\nuser_101,${pngBase64}\nuser_102,${pngBase64}`;
@@ -59,6 +59,7 @@ describe("Custom Column & Output Format Mapping", () => {
     expect(options.outputFormat).toBe("csv");
     expect(options.outputKeyHeader).toBe("id");
     expect(options.outputUrlHeader).toBe("image_url");
+    expect(options.onlyCols).toBe(true);
 
     const rowStream = parseCsvStream(testInputCsv, options);
     const summary = await runWorkerPool(rowStream, options);
@@ -69,12 +70,15 @@ describe("Custom Column & Output Format Mapping", () => {
     const outputCsvText = await Bun.file(testOutputCsv).text();
     const lines = outputCsvText.trim().split("\n");
 
-    expect(lines[0]).toBe("id,image_url,success,file_id,error");
-    expect(outputCsvText).toContain("user_101,https://vfs.example.com/files/demo/user_101.png,true,,");
-    expect(outputCsvText).toContain("user_102,https://vfs.example.com/files/demo/user_102.png,true,,");
+    // Header must only have id,image_url
+    expect(lines[0]).toBe("id,image_url");
+    expect(outputCsvText).toContain("user_101,https://vfs.example.com/files/demo/user_101.png");
+    expect(outputCsvText).toContain("user_102,https://vfs.example.com/files/demo/user_102.png");
+    // Ensure success/error columns are NOT present
+    expect(outputCsvText).not.toContain("true");
   });
 
-  test("supports --output-headers shortcut flag", async () => {
+  test("supports --output-headers shortcut flag with strict columns", async () => {
     const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
     const inputCsvContent = `sku,photo\nITEM_99,${pngBase64}`;
@@ -91,6 +95,35 @@ describe("Custom Column & Output Format Mapping", () => {
     const options = parseCliArgs(args);
     expect(options.outputKeyHeader).toBe("product_id");
     expect(options.outputUrlHeader).toBe("asset_url");
+    expect(options.onlyCols).toBe(true);
+
+    const rowStream = parseCsvStream(testInputCsv, options);
+    await runWorkerPool(rowStream, options);
+
+    const outputCsvText = await Bun.file(testOutputCsv).text();
+    const lines = outputCsvText.trim().split("\n");
+
+    expect(lines[0]).toBe("product_id,asset_url");
+    expect(lines[1]).toBe("ITEM_99,https://vfs.example.com/files/demo/ITEM_99.png");
+  });
+
+  test("supports --include-status to output debugging status columns", async () => {
+    const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+    const inputCsvContent = `sku,photo\nITEM_99,${pngBase64}`;
+    await Bun.write(testInputCsv, inputCsvContent);
+
+    const args = [
+      "-i", testInputCsv,
+      "-o", testOutputCsv,
+      "--key-col", "sku",
+      "--data-col", "photo",
+      "--output-headers", "product_id,asset_url",
+      "--include-status",
+    ];
+
+    const options = parseCliArgs(args);
+    expect(options.onlyCols).toBe(false);
 
     const rowStream = parseCsvStream(testInputCsv, options);
     await runWorkerPool(rowStream, options);
@@ -102,7 +135,7 @@ describe("Custom Column & Output Format Mapping", () => {
     expect(lines[1]).toContain("ITEM_99,https://vfs.example.com/files/demo/ITEM_99.png,true,,");
   });
 
-  test("generates JSON output with custom property names", async () => {
+  test("generates JSON output with only custom property names when specified", async () => {
     const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
     const inputCsvContent = `user_id,avatar\nusr_1,${pngBase64}`;
@@ -113,8 +146,7 @@ describe("Custom Column & Output Format Mapping", () => {
       "-o", testOutputJson,
       "--key-col", "user_id",
       "--data-col", "avatar",
-      "--output-key-header", "id",
-      "--output-url-header", "image_url",
+      "--output-headers", "id,image_url",
     ]);
 
     const rowStream = parseCsvStream(testInputCsv, options);
@@ -122,7 +154,9 @@ describe("Custom Column & Output Format Mapping", () => {
 
     const outputJson = await Bun.file(testOutputJson).json();
     expect(outputJson.items.length).toBe(1);
-    expect(outputJson.items[0].id).toBe("usr_1");
-    expect(outputJson.items[0].image_url).toBe("https://vfs.example.com/files/demo/usr_1.png");
+    expect(outputJson.items[0]).toEqual({
+      id: "usr_1",
+      image_url: "https://vfs.example.com/files/demo/usr_1.png",
+    });
   });
 });

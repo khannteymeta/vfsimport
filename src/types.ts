@@ -29,7 +29,8 @@ export interface CliOptions {
   // Custom Output Header mappings
   outputKeyHeader: string;
   outputUrlHeader: string;
-  outputExtraHeaders?: boolean; // include status/error in CSV if true or only key & url
+  onlyCols: boolean; // Output ONLY the specified key and url columns
+  includeStatus: boolean; // Include success, fileId, error columns
 }
 
 export interface CsvRow {

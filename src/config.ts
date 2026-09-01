@@ -17,9 +17,11 @@ REQUIRED:
 OUTPUT OPTIONS:
   -o, --output <path>              Path to output file (default: "output.json")
   -f, --format <json|csv|auto>     Output format (default: auto-detect from extension)
-      --output-key-header <name>   Custom key column header in output (default: "key" or input column name)
+      --output-key-header <name>   Custom key column header in output (default: "key")
       --output-url-header <name>   Custom URL column header in output (default: "url")
-      --output-headers <key,url>   Comma-separated output headers, e.g. "id,image_url"
+      --output-headers <key,url>   Comma-separated output headers (e.g. "id,image_url")
+      --only-cols                  Output ONLY the specified key & url columns (default: true when output-headers specified)
+      --include-status             Include success, file_id, and error columns in output
 
 INPUT COLUMN MAPPING:
       --key-col <name|index>       Input column name or 0-based index for Key/ID (default: detects "key"/"id" or 0)
@@ -45,14 +47,14 @@ SERVER & UPLOAD OPTIONS:
       --version                    Show version
 
 EXAMPLES:
-  # Output as CSV with custom headers 'id' and 'image_url'
-  vfsimport -i input.csv -o output.csv --output-key-header id --output-url-header image_url
+  # Output CSV with ONLY 'id' and 'image_url' columns
+  vfsimport -i input.csv -o output.csv --output-headers "id,image_url"
 
   # Custom input columns and CSV output
   vfsimport -i users.csv -o result.csv --key-col user_id --data-col avatar_base64 --output-headers "id,image_url"
 
-  # Fast import with API key and concurrency 10
-  vfsimport -i data.csv -o results.json --api-key "secret-key" -c 10
+  # Include status/error debugging columns
+  vfsimport -i data.csv -o result.csv --include-status
 `);
 }
 
@@ -64,6 +66,9 @@ export function parseCliArgs(argv: string[] = process.argv.slice(2)): CliOptions
     "output-key-header": { type: "string" as const },
     "output-url-header": { type: "string" as const },
     "output-headers": { type: "string" as const },
+    "only-cols": { type: "boolean" as const },
+    "include-status": { type: "boolean" as const, default: false },
+    "all-cols": { type: "boolean" as const, default: false },
 
     "key-col": { type: "string" as const },
     "input-key": { type: "string" as const },
@@ -111,6 +116,8 @@ export function parseCliArgs(argv: string[] = process.argv.slice(2)): CliOptions
       outputFormat: "auto",
       outputKeyHeader: "key",
       outputUrlHeader: "url",
+      onlyCols: false,
+      includeStatus: false,
       url: "",
       concurrency: 5,
       chunkSize: 50,
@@ -126,6 +133,8 @@ export function parseCliArgs(argv: string[] = process.argv.slice(2)): CliOptions
       outputFormat: "auto",
       outputKeyHeader: "key",
       outputUrlHeader: "url",
+      onlyCols: false,
+      includeStatus: false,
       url: "",
       concurrency: 5,
       chunkSize: 50,
@@ -180,6 +189,9 @@ export function parseCliArgs(argv: string[] = process.argv.slice(2)): CliOptions
   // Handle custom output headers
   let outputKeyHeader = (values["output-key-header"] as string) || process.env.VFS_OUTPUT_KEY_HEADER;
   let outputUrlHeader = (values["output-url-header"] as string) || process.env.VFS_OUTPUT_URL_HEADER;
+  const hasExplicitOutputHeaders = Boolean(
+    values["output-headers"] || values["output-key-header"] || values["output-url-header"]
+  );
 
   const combinedHeaders = values["output-headers"] as string;
   if (combinedHeaders) {
@@ -194,13 +206,17 @@ export function parseCliArgs(argv: string[] = process.argv.slice(2)): CliOptions
   const nameCol = (values["name-col"] as string) || process.env.VFS_NAME_COL;
   const mimeCol = (values["mime-col"] as string) || process.env.VFS_MIME_COL;
 
-  // If outputKeyHeader not explicitly set, default to keyCol name if it was a string name, else "key"
   if (!outputKeyHeader) {
     outputKeyHeader = keyCol && isNaN(Number(keyCol)) ? keyCol : "key";
   }
   if (!outputUrlHeader) {
     outputUrlHeader = "url";
   }
+
+  const includeStatus = Boolean(values["include-status"] || values["all-cols"]);
+  const onlyCols = values["only-cols"] !== undefined
+    ? Boolean(values["only-cols"])
+    : hasExplicitOutputHeaders && !includeStatus;
 
   const apiKey =
     (values["api-key"] as string) ||
@@ -240,8 +256,10 @@ export function parseCliArgs(argv: string[] = process.argv.slice(2)): CliOptions
     input,
     output,
     outputFormat: rawFormat,
-    outputKeyHeader,
-    outputUrlHeader,
+    outputKeyHeader: outputKeyHeader.trim(),
+    outputUrlHeader: outputUrlHeader.trim(),
+    onlyCols,
+    includeStatus,
     keyCol,
     dataCol,
     metaCol,
