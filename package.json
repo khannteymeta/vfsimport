@@ -1,0 +1,20 @@
+{
+  "name": "vfsimport",
+  "version": "1.0.0",
+  "description": "High performance CSV to VFS Server batch uploader CLI using Bun",
+  "module": "index.ts",
+  "type": "module",
+  "bin": {
+    "vfsimport": "./index.ts"
+  },
+  "scripts": {
+    "start": "bun run index.ts",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5 || ^7"
+  }
+}
