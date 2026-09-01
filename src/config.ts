@@ -14,6 +14,14 @@ USAGE:
 REQUIRED:
   -i, --input <path>               Path to the CSV file
 
+CSV HEADER & COLUMN OPTIONS:
+      --no-header                  Treat the first row as data instead of column headers (default: false)
+      --key-col <name|index>       Input column name or 0-based index for Key/ID (default: detects "key"/"id" or 0)
+      --data-col <name|index>      Input column name or 0-based index for Base64 Data (default: detects "data"/"base64" or 1)
+      --meta-col <name|index>      Input column name or 0-based index for Metadata
+      --name-col <name|index>      Input column name or 0-based index for Filename
+      --mime-col <name|index>      Input column name or 0-based index for MIME type
+
 OUTPUT OPTIONS:
   -o, --output <path>              Path to output file (default: "output.json")
   -f, --format <json|csv|auto>     Output format (default: auto-detect from extension)
@@ -22,13 +30,6 @@ OUTPUT OPTIONS:
       --output-headers <key,url>   Comma-separated output headers (e.g. "id,image_url")
       --only-cols                  Output ONLY the specified key & url columns (default: true when output-headers specified)
       --include-status             Include success, file_id, and error columns in output
-
-INPUT COLUMN MAPPING:
-      --key-col <name|index>       Input column name or 0-based index for Key/ID (default: detects "key"/"id" or 0)
-      --data-col <name|index>      Input column name or 0-based index for Base64 Data (default: detects "data"/"base64" or 1)
-      --meta-col <name|index>      Input column name or 0-based index for Metadata
-      --name-col <name|index>      Input column name or 0-based index for Filename
-      --mime-col <name|index>      Input column name or 0-based index for MIME type
 
 SERVER & UPLOAD OPTIONS:
   -u, --url <url>                  VFS server URL (default: "${DEFAULT_SERVER_URL}")
@@ -47,14 +48,14 @@ SERVER & UPLOAD OPTIONS:
       --version                    Show version
 
 EXAMPLES:
-  # Output CSV with ONLY 'id' and 'image_url' columns
+  # Output CSV with ONLY 'id' and 'image_url' columns (headers skipped from upload)
   vfsimport -i input.csv -o output.csv --output-headers "id,image_url"
 
   # Custom input columns and CSV output
   vfsimport -i users.csv -o result.csv --key-col user_id --data-col avatar_base64 --output-headers "id,image_url"
 
-  # Include status/error debugging columns
-  vfsimport -i data.csv -o result.csv --include-status
+  # Process a CSV without header row
+  vfsimport -i raw.csv -o output.json --no-header
 `);
 }
 
@@ -69,6 +70,10 @@ export function parseCliArgs(argv: string[] = process.argv.slice(2)): CliOptions
     "only-cols": { type: "boolean" as const },
     "include-status": { type: "boolean" as const, default: false },
     "all-cols": { type: "boolean" as const, default: false },
+
+    "no-header": { type: "boolean" as const, default: false },
+    "has-header": { type: "boolean" as const },
+    "skip-header": { type: "boolean" as const },
 
     "key-col": { type: "string" as const },
     "input-key": { type: "string" as const },
@@ -118,6 +123,7 @@ export function parseCliArgs(argv: string[] = process.argv.slice(2)): CliOptions
       outputUrlHeader: "url",
       onlyCols: false,
       includeStatus: false,
+      hasHeader: true,
       url: "",
       concurrency: 5,
       chunkSize: 50,
@@ -135,6 +141,7 @@ export function parseCliArgs(argv: string[] = process.argv.slice(2)): CliOptions
       outputUrlHeader: "url",
       onlyCols: false,
       includeStatus: false,
+      hasHeader: true,
       url: "",
       concurrency: 5,
       chunkSize: 50,
@@ -184,6 +191,14 @@ export function parseCliArgs(argv: string[] = process.argv.slice(2)): CliOptions
     } else {
       rawFormat = "json";
     }
+  }
+
+  // Header detection: by default true, unless --no-header is provided
+  let hasHeader = true;
+  if (values["no-header"] === true) {
+    hasHeader = false;
+  } else if (values["has-header"] !== undefined) {
+    hasHeader = Boolean(values["has-header"]);
   }
 
   // Handle custom output headers
@@ -260,6 +275,7 @@ export function parseCliArgs(argv: string[] = process.argv.slice(2)): CliOptions
     outputUrlHeader: outputUrlHeader.trim(),
     onlyCols,
     includeStatus,
+    hasHeader,
     keyCol,
     dataCol,
     metaCol,

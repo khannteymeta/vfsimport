@@ -2,7 +2,7 @@ import type { CsvRow, CliOptions } from "./types";
 
 /**
  * A streaming CSV parser state machine that handles large CSV files safely without memory overflow.
- * Supports custom column names or column index mappings.
+ * Properly skips and parses header rows without uploading them.
  */
 export async function* parseCsvStream(
   filePath: string,
@@ -14,6 +14,7 @@ export async function* parseCsvStream(
     throw new Error(`CSV file not found: ${filePath}`);
   }
 
+  const hasHeader = options?.hasHeader !== false; // default: true
   const stream = file.stream();
   const reader = stream.getReader();
   const decoder = new TextDecoder("utf-8");
@@ -53,6 +54,70 @@ export async function* parseCsvStream(
     return defaultIdx;
   };
 
+  const processRow = (rowFields: string[]): CsvRow | null => {
+    if (rowFields.length === 0 || (rowFields.length === 1 && rowFields[0].trim() === "")) {
+      return null;
+    }
+
+    if (isFirstRow && hasHeader) {
+      isFirstRow = false;
+      headers = rowFields.map((c) => c.trim().toLowerCase());
+
+      keyIndex = resolveColumnIndex(
+        headers,
+        options?.keyCol,
+        ["key", "id", "uuid", "code", "name", "user_id", "product_id", "title"],
+        0
+      );
+      dataIndex = resolveColumnIndex(
+        headers,
+        options?.dataCol,
+        ["data", "base64", "file", "content", "image", "photo", "pic", "avatar", "attachment", "raw"],
+        1
+      );
+      metaIndex = resolveColumnIndex(
+        headers,
+        options?.metaCol,
+        ["metadata", "meta"],
+        -1
+      );
+      nameIndex = resolveColumnIndex(
+        headers,
+        options?.nameCol,
+        ["filename", "file_name"],
+        -1
+      );
+      mimeIndex = resolveColumnIndex(
+        headers,
+        options?.mimeCol,
+        ["mimetype", "mime_type", "mime", "content_type"],
+        -1
+      );
+
+      // Header row is parsed for column indices and IGNORED from uploading
+      return null;
+    }
+
+    isFirstRow = false;
+
+    const key = (rowFields[keyIndex] ?? "").trim();
+    const data = (rowFields[dataIndex] ?? "").trim();
+
+    if (!key && !data) {
+      return null;
+    }
+
+    rowIndex++;
+    return {
+      rowIndex,
+      key: key || `row_${rowIndex}`,
+      data,
+      metadata: metaIndex >= 0 ? rowFields[metaIndex] : undefined,
+      name: nameIndex >= 0 ? rowFields[nameIndex] : undefined,
+      mimeType: mimeIndex >= 0 ? rowFields[mimeIndex] : undefined,
+    };
+  };
+
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -83,85 +148,9 @@ export async function* parseCsvStream(
           currentRow.push(currentField);
           currentField = "";
 
-          // Process the completed row if it's not completely empty
-          if (currentRow.length > 1 || (currentRow.length === 1 && currentRow[0].trim() !== "")) {
-            if (isFirstRow) {
-              isFirstRow = false;
-              const lowerCols = currentRow.map((c) => c.trim().toLowerCase());
-
-              const hasExplicitKeyCol =
-                options?.keyCol && lowerCols.includes(options.keyCol.trim().toLowerCase());
-              const hasExplicitDataCol =
-                options?.dataCol && lowerCols.includes(options.dataCol.trim().toLowerCase());
-
-              const hasDefaultKey =
-                lowerCols.includes("key") ||
-                lowerCols.includes("id") ||
-                lowerCols.includes("name") ||
-                lowerCols.includes("code");
-              const hasDefaultData =
-                lowerCols.includes("data") ||
-                lowerCols.includes("base64") ||
-                lowerCols.includes("file") ||
-                lowerCols.includes("content") ||
-                lowerCols.includes("image");
-
-              if (hasExplicitKeyCol || hasExplicitDataCol || (hasDefaultKey && hasDefaultData)) {
-                // Header detected
-                headers = lowerCols;
-                keyIndex = resolveColumnIndex(
-                  headers,
-                  options?.keyCol,
-                  ["key", "id", "code", "name"],
-                  0
-                );
-                dataIndex = resolveColumnIndex(
-                  headers,
-                  options?.dataCol,
-                  ["data", "base64", "file", "content", "image"],
-                  1
-                );
-                metaIndex = resolveColumnIndex(
-                  headers,
-                  options?.metaCol,
-                  ["metadata", "meta"],
-                  -1
-                );
-                nameIndex = resolveColumnIndex(
-                  headers,
-                  options?.nameCol,
-                  ["filename", "file_name"],
-                  -1
-                );
-                mimeIndex = resolveColumnIndex(
-                  headers,
-                  options?.mimeCol,
-                  ["mimetype", "mime_type", "mime", "content_type"],
-                  -1
-                );
-                currentRow = [];
-                continue;
-              } else {
-                // First row is data
-                keyIndex = options?.keyCol && !isNaN(Number(options.keyCol)) ? Number(options.keyCol) : 0;
-                dataIndex = options?.dataCol && !isNaN(Number(options.dataCol)) ? Number(options.dataCol) : 1;
-              }
-            }
-
-            const key = (currentRow[keyIndex] ?? "").trim();
-            const data = (currentRow[dataIndex] ?? "").trim();
-
-            if (key || data) {
-              rowIndex++;
-              yield {
-                rowIndex,
-                key: key || `row_${rowIndex}`,
-                data,
-                metadata: metaIndex >= 0 ? currentRow[metaIndex] : undefined,
-                name: nameIndex >= 0 ? currentRow[nameIndex] : undefined,
-                mimeType: mimeIndex >= 0 ? currentRow[mimeIndex] : undefined,
-              };
-            }
+          const parsed = processRow(currentRow);
+          if (parsed) {
+            yield parsed;
           }
           currentRow = [];
         } else {
@@ -173,18 +162,9 @@ export async function* parseCsvStream(
     // Flush any remaining field at end of stream
     if (currentField.length > 0 || currentRow.length > 0) {
       currentRow.push(currentField);
-      if (currentRow.length > 1 || (currentRow.length === 1 && currentRow[0].trim() !== "")) {
-        if (!isFirstRow || (currentRow[keyIndex] && currentRow[dataIndex])) {
-          rowIndex++;
-          yield {
-            rowIndex,
-            key: (currentRow[keyIndex] ?? "").trim() || `row_${rowIndex}`,
-            data: (currentRow[dataIndex] ?? "").trim(),
-            metadata: metaIndex >= 0 ? currentRow[metaIndex] : undefined,
-            name: nameIndex >= 0 ? currentRow[nameIndex] : undefined,
-            mimeType: mimeIndex >= 0 ? currentRow[mimeIndex] : undefined,
-          };
-        }
+      const parsed = processRow(currentRow);
+      if (parsed) {
+        yield parsed;
       }
     }
   } finally {

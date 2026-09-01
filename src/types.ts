@@ -19,6 +19,9 @@ export interface CliOptions {
   version?: boolean;
   verbose?: boolean;
 
+  // Header detection
+  hasHeader: boolean; // default: true (row 1 is ignored from upload)
+
   // Custom Input Column mappings
   keyCol?: string;
   dataCol?: string;
